@@ -3,7 +3,7 @@ const https = require('https');
 const xml2js = require('xml2js');
 
 //config variables
-var snapshotsOfMasterToKeep = process.env.snapshotsOfMasterToKeep;
+//var snapshotsOfMasterToKeep = process.env.snapshotsOfMasterToKeep;
 var packageCloudUser = process.env.packageCloudUser;
 var packageCloudRepository = process.env.packageCloudRepository;
 var packageCloudApiKey = process.env.packageCloudApiKey;
@@ -11,6 +11,7 @@ var gitHubUserAgent = process.env.gitHubUserAgent;
 var gitHubPersonalAccessToken = process.env.gitHubPersonalAccessToken;
 var gitHubOrganization = process.env.gitHubOrganization;
 
+/*
 // Compares two date strings, used when sorting packages by build date
 function compareDateString(a, b) {
     var dateA = new Date(a);
@@ -24,6 +25,7 @@ function compareDateString(a, b) {
     }
     return 0;
 }
+*/
 
 // Retrieves a file by filename from a given repo
 function getFile(repo, pathToFile, callback) {
@@ -222,6 +224,7 @@ function removeSnapshotPackagesByTag(repo, tag, callback) {
     });
 }
 
+/*
 // Removes all SNAPSHOT packages from the given repository and only keeps [count] packages (triggered by master-push)
 function removeOldSnapshotPackages(repo, count, callback) {
     //get the group ID
@@ -303,6 +306,7 @@ function removeOldSnapshotPackages(repo, count, callback) {
         }
     });
 }
+*/
 
 function conclude(status) {
     console.log('Finished package cleanup.');
@@ -343,6 +347,7 @@ exports.handler = (event, context, callback) => {
                     conclude(status);
                 }
             });
+        /*
         } else if(message.ref === 'refs/heads/master' && message.deleted === false && message.created === false && message.before !== '0000000000000000000000000000000000000000' && message.after !== '0000000000000000000000000000000000000000' && message.commits.length !== 0) {
             //handle new pushes to master
             status += ', new push to master branch';
@@ -358,6 +363,7 @@ exports.handler = (event, context, callback) => {
                     conclude(status);
                 }
             });
+        */
         } else if(message.ref.startsWith('refs/tags/') && message.created === true && message.before === '0000000000000000000000000000000000000000') {
             //handle newly created tags
             var tagName = message.ref.replace('refs/tags/', '');
