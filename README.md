@@ -11,11 +11,11 @@ In the script, variables are used to hold a few configuration strings:
 * **packageCloudApiKey:** PackageCloud API Key.
 * **gitHubUserAgent:** User Agent that should be sent with your GitHub API requests, e.g. your GitHub username.
 * **gitHubOrganization:** The GitHub organization that owns your repositories.
-* **gitHubPersonalAccessToken:** A personal access token enabling the script to access the GitHub API. This can either be a Personal Access Token from your personal GitHub account or an OAuth token from a GitHub OAuth app.
-
-To use the latter alternative, create a new OAuth app, e.g. in your organization's Developer settings. The benefit of using an OAuth app is that you can somewhat restrict permissions. Due to GitHub's structure of scopes, the OAuth app will be able to read **and write** to all your public and private repositories but access to other account features is not granted.
+* **gitHubPersonalAccessToken:** A personal access token enabling the script to access the GitHub API. This can either be a Personal Access Token from your personal GitHub account or an OAuth token from a GitHub OAuth app. To use the latter alternative, create a new OAuth app, e.g. in your organization's Developer settings. The benefit of using an OAuth app is that you can somewhat restrict permissions. Due to GitHub's structure of scopes, the OAuth app will be able to read **and write** to all your public and private repositories but access to other account features is not granted.
 Since we will not need a web interface, we can get the OAuth token via a simple cURL request:
-`curl -H "Content-Type: application/json" -H "X-GitHub-OTP: OTP_TOKEN" -X POST -d '{ "scopes": ["repo"], "note": "PackageCloud Cleanup", "client_id": "9d87142b8e881f035f84", "client_secret": "9e0682185c78aa2b461dcfe5cfc16b32e1d5059e" }' -u 'USERNAME:PASSWORD' https://api.github.com/authorizations`
+```
+curl -H "Content-Type: application/json" -H "X-GitHub-OTP: OTP_TOKEN" -X POST -d '{ "scopes": ["repo"], "note": "PackageCloud Cleanup", "client_id": "9d87142b8e881f035f84", "client_secret": "9e0682185c78aa2b461dcfe5cfc16b32e1d5059e" }' -u 'USERNAME:PASSWORD' https://api.github.com/authorizations
+```
 Replace the placeholders `OTP_TOKEN`, `USERNAME` and `PASSWORD`. `OTP_TOKEN` is one-time password from your two-factor authentication app. Remove the `X-GitHub-OTP` header if you're not using 2FA. The `token` field from the response is what you need to fill in for `gitHubPersonalAccessToken`.
 
 There are three triggers for the cleanup:
