@@ -10,9 +10,10 @@ var packageCloudApiKey = process.env.packageCloudApiKey;
 var gitHubUserAgent = process.env.gitHubUserAgent;
 var gitHubPersonalAccessToken = process.env.gitHubPersonalAccessToken;
 var gitHubOrganization = process.env.gitHubOrganization;
+var slackWebhookPath = process.env.slackWebhookPath;
 
 /*
-// Compares two date strings, used when sorting packages by build date
+// comparison function used when sorting packages by build date
 function compareDateString(a, b) {
     var dateA = new Date(a);
     var dateB = new Date(b);
@@ -58,6 +59,7 @@ function getFile(repo, pathToFile, callback) {
     req.setHeader('Authorization', 'token ' + gitHubPersonalAccessToken);
 
     req.on('error', function(e) {
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'packagecloud', 'ERROR: Could not read file ' + pathToFile + ' from GitHub repository ' + repo + '.');
         console.error('Error when requesting file ' + pathToFile + ': ' + e.message);
     });
 
@@ -133,6 +135,7 @@ function searchPackagesInPackageCloud(searchString, callback) {
     req.setHeader('Authorization', 'Basic ' + new Buffer(packageCloudApiKey + ':').toString('base64'));
 
     req.on('error', function(e) {
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'packagecloud', 'ERROR: Could not search PackageCloud with search string ' + searchString + '.');
         console.error('Error when searching for packages: ' + e.message);
     });
 
@@ -168,6 +171,7 @@ function removePackageFromPackageCloud(filename, groupId, callback) {
     req.setHeader('Authorization', 'Basic ' + new Buffer(packageCloudApiKey + ':').toString('base64'));
 
     req.on('error', function(e) {
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'packagecloud', 'ERROR: Could not delete package ' + filename + ' of group ' + groupId + ' from PackageCloud.');
         console.log('Error while deleting package ' + filename + ': ' + e.message);
     });
 
@@ -308,8 +312,47 @@ function removeOldSnapshotPackages(repo, count, callback) {
 }
 */
 
+function sendToSlack(slackUser, slackEmoji, slackChannel, slackMessage) {
+    var options = {
+        host: 'hooks.slack.com',
+        port: 443,
+        path: slackWebhookPath,
+        method: 'POST'
+    };
+
+    var message = {
+        username: slackUser,
+        icon_emoji: slackEmoji,
+        channel: slackChannel,
+        text: slackMessage
+    };
+
+    var req = https.request(options, function(res) {
+        res.setEncoding('utf8');
+        var body = '';
+        res.on('data', function (chunk) {
+            body += chunk;
+        });
+        res.on('end', function () {
+            if(res.statusCode === 200) {
+                //callback();
+            }
+        });
+    });
+
+    req.setHeader('Authorization', 'Basic ' + new Buffer(packageCloudApiKey + ':').toString('base64'));
+
+    req.on('error', function(e) {
+        console.error('Error when posting to Slack: ' + e.message);
+    });
+
+    req.write(JSON.stringify(message));
+    req.end();
+}
+
 function conclude(status) {
     console.log('Finished package cleanup.');
+    sendToSlack('PackageCloud Cleanup', ':snowman_without_snow:', 'packagecloud', status);
     console.log(status);
 }
 
@@ -325,7 +368,7 @@ exports.handler = (event, context, callback) => {
 
     //only continue if we have received a Github event
     if(messageAttributes['X-Github-Event'] && messageAttributes['X-Github-Event'].Value === 'push') {
-        status = 'End Result: Found GitHub push event';
+        status = 'Found GitHub push event';
 
         //parse and output event message
         const message = JSON.parse(event.Records[0].Sns.Message);
@@ -381,13 +424,13 @@ exports.handler = (event, context, callback) => {
                 }
             });
         } else {
-            status += ', but no condition for further processing was met. Nothing was cleaned.';
-            console.log('Full event: ' + message);
+            status += ', but no condition for further processing was met. Nothing was cleaned. See CloudWatch for full event.';
+            console.log('Full event: ' + JSON.stringify(message));
             conclude(status);
         }
     } else {
         console.log('Cannot find a GitHub event.');
-        status = 'End Result: No GitHub event found, nothing was cleaned.';
+        status = 'Non-GitHub event found, nothing was cleaned.';
         conclude(status);
     }
 

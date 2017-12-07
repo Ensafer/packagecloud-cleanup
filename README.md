@@ -4,6 +4,8 @@ Automatically cleans up old packages in a PackageCloud repository upon GitHub ac
 GitHub ties into Amazon's Simple Notification Service by specifying the service in your repository's settings. The endpoint of your Amazon SNS topic must be configured to be a Lambda function based on Node.js. Use the included script.js file as the Lambda function's content.
 General setup as outlined in [this AWS Compute Blog post](https://aws.amazon.com/blogs/compute/dynamic-github-actions-with-aws-lambda/).
 
+The end result of each run can be posted to a Slack channel of your choice. Errors are reported as well.
+
 ### Variables
 In the script, variables are used to hold a few configuration strings:
 * **snapshotsOfMasterToKeep:** The number of snapshots of a package that should be kept before cleaning up.
@@ -13,6 +15,7 @@ In the script, variables are used to hold a few configuration strings:
 * **gitHubUserAgent:** User Agent that should be sent with your GitHub API requests, e.g. your GitHub username.
 * **gitHubOrganization:** The GitHub organization that owns your repositories.
 * **gitHubPersonalAccessToken:** A personal access token enabling the script to access the GitHub API. This can either be a Personal Access Token from your personal GitHub account or an OAuth token from a GitHub OAuth app.
+* **slackWebhookPath:** The path that you received after creating an Incoming Webhook in Slack. Don't put the full URL in here, only the path, starting with `/services/`.
 
 These variables are stored as Environment Variables in the Lambda function.
 
@@ -27,3 +30,6 @@ There are three triggers for the cleanup:
 * **Branch Cleanup** is triggered when a branch is deleted. All packages with the branch name in the version string will be deleted.
 * **Snapshot Cleanup** is triggered when a new snapshot version is pushed to the master branch. Only a given amount of snapshots (see variable *snapshotsOfMasterToKeep* above) will be preserved, any packages exceeding this limit will be deleted. Older packages will be deleted first. **Note:** This function is deactivated in the code due to PackageCloud not exposing multiple builds of the same package via API. Selectively deleting builds is therefore not possible at this moment.
 * **Release Cleanup** is triggered when a new tag is created. All packages with that tag/version and the *-SNAPSHOT* suffix will be deleted.
+
+### Slack Integration
+After each run and in case of errors, a short summary is posted to Slack. You need to create an [Incoming Webhook](https://api.slack.com/incoming-webhooks) for your Slack team. Please see the `sendToSlack` function in `script.js` for any further modifications.
