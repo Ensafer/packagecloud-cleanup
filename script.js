@@ -59,7 +59,7 @@ function getFile(repo, pathToFile, callback) {
     req.setHeader('Authorization', 'token ' + gitHubPersonalAccessToken);
 
     req.on('error', function(e) {
-        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'packagecloud', 'ERROR: Could not read file ' + pathToFile + ' from GitHub repository ' + repo + '.');
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'build', 'ERROR: Could not read file ' + pathToFile + ' from GitHub repository ' + repo + '.');
         console.error('Error when requesting file ' + pathToFile + ': ' + e.message);
     });
 
@@ -135,7 +135,7 @@ function searchPackagesInPackageCloud(searchString, callback) {
     req.setHeader('Authorization', 'Basic ' + new Buffer(packageCloudApiKey + ':').toString('base64'));
 
     req.on('error', function(e) {
-        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'packagecloud', 'ERROR: Could not search PackageCloud with search string ' + searchString + '.');
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'build', 'ERROR: Could not search PackageCloud with search string ' + searchString + '.');
         console.error('Error when searching for packages: ' + e.message);
     });
 
@@ -171,7 +171,7 @@ function removePackageFromPackageCloud(filename, groupId, callback) {
     req.setHeader('Authorization', 'Basic ' + new Buffer(packageCloudApiKey + ':').toString('base64'));
 
     req.on('error', function(e) {
-        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'packagecloud', 'ERROR: Could not delete package ' + filename + ' of group ' + groupId + ' from PackageCloud.');
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'build', 'ERROR: Could not delete package ' + filename + ' of group ' + groupId + ' from PackageCloud.');
         console.log('Error while deleting package ' + filename + ': ' + e.message);
     });
 
@@ -190,12 +190,15 @@ function removeAllPackagesByBranch(repo, branch, callback) {
         searchPackagesInPackageCloud(searchString, function(packagesToBeDeleted) {
             //for each package, send a delete request
             var itemsToProcess = packagesToBeDeleted.length;
+            if(itemsToProcess === 0) {
+                callback(true, 0);
+            }
             packagesToBeDeleted.forEach(function(element) {
                 removePackageFromPackageCloud(element.filename, groupId, function() {
                     itemsToProcess--;
                     //callback when all runs of the loop have completed
                     if(itemsToProcess === 0) {
-                        callback(true);
+                        callback(true, packagesToBeDeleted.length);
                     }
                 });
             });
@@ -215,12 +218,15 @@ function removeSnapshotPackagesByTag(repo, tag, callback) {
         searchPackagesInPackageCloud(searchString, function(packagesToBeDeleted) {
             //for each package, send a delete request
             var itemsToProcess = packagesToBeDeleted.length;
+            if(itemsToProcess === 0) {
+                callback(true, 0);
+            }
             packagesToBeDeleted.forEach(function(element) {
                 removePackageFromPackageCloud(element.filename, groupId, function() {
                     itemsToProcess--;
                     //callback when all runs of the loop have completed
                     if(itemsToProcess === 0) {
-                        callback(true);
+                        callback(true, packagesToBeDeleted.length);
                     }
                 });
             });
@@ -352,7 +358,7 @@ function sendToSlack(slackUser, slackEmoji, slackChannel, slackMessage) {
 
 function conclude(status) {
     console.log('Finished package cleanup.');
-    sendToSlack('PackageCloud Cleanup', ':snowman_without_snow:', 'packagecloud', status);
+    sendToSlack('PackageCloud Cleanup', ':snowman_without_snow:', 'build', status);
     console.log(status);
 }
 
@@ -379,10 +385,14 @@ exports.handler = (event, context, callback) => {
             var branchName = message.ref.replace('refs/heads/', '');
             status += ', branch ' + branchName + ' was removed';
             console.log('Found relevant event: Removal of branch ' + branchName);
-            removeAllPackagesByBranch(message.repository.name, branchName, function(result) {
-                if(result === true) {
-                    status += ', all packages were deleted.';
-                    console.log('Finished removing all packages of branch ' + branchName + '.');
+            removeAllPackagesByBranch(message.repository.name, branchName, function(result, count) {
+                if(result === true && count > 0) {
+                    status += ', all ' + count + ' package(s) were deleted.';
+                    console.log('Finished removing all ' + count + ' package(s) of branch ' + branchName + '.');
+                    conclude(status);
+                } else if(result === true) {
+                    status += ', but no packages were found. Nothing was deleted.';
+                    console.log('Finished removing all ' + count + ' package(s) of branch ' + branchName + '.');
                     conclude(status);
                 } else {
                     status += ', encountered an error while deleting all packages.';
@@ -412,10 +422,14 @@ exports.handler = (event, context, callback) => {
             var tagName = message.ref.replace('refs/tags/', '');
             status += ', new tag ' + tagName + ' was created';
             console.log('Found relevant event: Created new tag ' + tagName);
-            removeSnapshotPackagesByTag(message.repository.name, tagName, function(result) {
-                if(result === true) {
-                    status += ', all snapshots were deleted.';
-                    console.log('Finished removing snapshots of tag ' + tagName + '.');
+            removeSnapshotPackagesByTag(message.repository.name, tagName, function(result, count) {
+                if(result === true && count > 0) {
+                    status += ', all ' + count + ' snapshot(s) were deleted.';
+                    console.log('Finished removing ' + count + ' snapshot(s) of tag ' + tagName + '.');
+                    conclude(status);
+                } else if(result === true) {
+                    status += ', but no snapshots were found. Nothing was deleted.';
+                    console.log('Finished removing ' + count + ' snapshot(s) of tag ' + tagName + '.');
                     conclude(status);
                 } else {
                     status += ', encountered an error while deleting snapshots.';
