@@ -59,7 +59,7 @@ function getFile(repo, pathToFile, callback) {
     req.setHeader('Authorization', 'token ' + gitHubPersonalAccessToken);
 
     req.on('error', function(e) {
-        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'build', 'ERROR: Could not read file ' + pathToFile + ' from GitHub repository ' + repo + '.');
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'builds', 'ERROR: Could not read file ' + pathToFile + ' from GitHub repository ' + repo + '.', null);
         console.error('Error when requesting file ' + pathToFile + ': ' + e.message);
     });
 
@@ -135,7 +135,7 @@ function searchPackagesInPackageCloud(searchString, callback) {
     req.setHeader('Authorization', 'Basic ' + new Buffer(packageCloudApiKey + ':').toString('base64'));
 
     req.on('error', function(e) {
-        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'build', 'ERROR: Could not search PackageCloud with search string ' + searchString + '.');
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'builds', 'ERROR: Could not search PackageCloud with search string ' + searchString + '.', null);
         console.error('Error when searching for packages: ' + e.message);
     });
 
@@ -171,7 +171,7 @@ function removePackageFromPackageCloud(filename, groupId, callback) {
     req.setHeader('Authorization', 'Basic ' + new Buffer(packageCloudApiKey + ':').toString('base64'));
 
     req.on('error', function(e) {
-        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'build', 'ERROR: Could not delete package ' + filename + ' of group ' + groupId + ' from PackageCloud.');
+        sendToSlack('PackageCloud Cleanup (ERROR)', ':x:', 'builds', 'ERROR: Could not delete package ' + filename + ' of group ' + groupId + ' from PackageCloud.', null);
         console.log('Error while deleting package ' + filename + ': ' + e.message);
     });
 
@@ -190,15 +190,19 @@ function removeAllPackagesByBranch(repo, branch, callback) {
         searchPackagesInPackageCloud(searchString, function(packagesToBeDeleted) {
             //for each package, send a delete request
             var itemsToProcess = packagesToBeDeleted.length;
+            var deletedPackages = [];
             if(itemsToProcess === 0) {
                 callback(true, 0);
             }
             packagesToBeDeleted.forEach(function(element) {
-                removePackageFromPackageCloud(element.filename, groupId, function() {
+                removePackageFromPackageCloud(element.filename, groupId, function(deleted) {
+                    if(deleted) {
+                        deletedPackages.push(element.filename + ' (' + groupId + ')');
+                    }
                     itemsToProcess--;
                     //callback when all runs of the loop have completed
                     if(itemsToProcess === 0) {
-                        callback(true, packagesToBeDeleted.length);
+                        callback(true, packagesToBeDeleted.length, deletedPackages);
                     }
                 });
             });
@@ -218,15 +222,19 @@ function removeSnapshotPackagesByTag(repo, tag, callback) {
         searchPackagesInPackageCloud(searchString, function(packagesToBeDeleted) {
             //for each package, send a delete request
             var itemsToProcess = packagesToBeDeleted.length;
+            var deletedPackages = [];
             if(itemsToProcess === 0) {
                 callback(true, 0);
             }
             packagesToBeDeleted.forEach(function(element) {
-                removePackageFromPackageCloud(element.filename, groupId, function() {
+                removePackageFromPackageCloud(element.filename, groupId, function(deleted) {
+                    if(deleted) {
+                        deletedPackages.push(element.filename + ' (' + groupId + ')');
+                    }
                     itemsToProcess--;
                     //callback when all runs of the loop have completed
                     if(itemsToProcess === 0) {
-                        callback(true, packagesToBeDeleted.length);
+                        callback(true, packagesToBeDeleted.length, deletedPackages);
                     }
                 });
             });
@@ -318,7 +326,7 @@ function removeOldSnapshotPackages(repo, count, callback) {
 }
 */
 
-function sendToSlack(slackUser, slackEmoji, slackChannel, slackMessage) {
+function sendToSlack(slackUser, slackEmoji, slackChannel, slackMessage, slackAttachment) {
     var options = {
         host: 'hooks.slack.com',
         port: 443,
@@ -330,8 +338,17 @@ function sendToSlack(slackUser, slackEmoji, slackChannel, slackMessage) {
         username: slackUser,
         icon_emoji: slackEmoji,
         channel: slackChannel,
-        text: slackMessage
+        text: slackMessage,
+        attachments: []
     };
+
+    if(slackAttachment && slackAttachment !== '') {
+        message.attachments[0] = {};
+        message.attachments[0].title = "Deleted packages";
+        message.attachments[0].text = slackAttachment;
+        message.attachments[0].color = "good";
+        message.attachments[0].mrkdwn_in = [ "text" ];
+    }
 
     var req = https.request(options, function(res) {
         res.setEncoding('utf8');
@@ -346,8 +363,6 @@ function sendToSlack(slackUser, slackEmoji, slackChannel, slackMessage) {
         });
     });
 
-    req.setHeader('Authorization', 'Basic ' + new Buffer(packageCloudApiKey + ':').toString('base64'));
-
     req.on('error', function(e) {
         console.error('Error when posting to Slack: ' + e.message);
     });
@@ -356,10 +371,30 @@ function sendToSlack(slackUser, slackEmoji, slackChannel, slackMessage) {
     req.end();
 }
 
-function conclude(status) {
-    console.log('Finished package cleanup.');
-    sendToSlack('PackageCloud Cleanup', ':snowman_without_snow:', 'build', status);
-    console.log(status);
+function getListOfPackages(packages, callback) {
+    if(packages) {
+        var listOfDeletedPackages = '';
+        packages.forEach(function(element, index) {
+            listOfDeletedPackages += '`' + element + '`';
+            if(index < packages.length - 1) {
+                listOfDeletedPackages += '\n';
+            } else if(index === packages.length - 1) {
+                callback(listOfDeletedPackages);
+            }
+        });
+    } else {
+        callback('');
+    }
+}
+
+function conclude(status, deletedPackages, notifyViaSlack) {
+    getListOfPackages(deletedPackages, function(listOfDeletedPackages) {
+        console.log('Finished package cleanup.');
+        if(notifyViaSlack) {
+            sendToSlack('PackageCloud Cleanup', ':snowman_without_snow:', 'builds', status, listOfDeletedPackages);
+        }
+        console.log(status);
+    });
 }
 
 exports.handler = (event, context, callback) => {
@@ -383,21 +418,21 @@ exports.handler = (event, context, callback) => {
         if(message.deleted === true && message.after === '0000000000000000000000000000000000000000') {
             //handle removed branches
             var branchName = message.ref.replace('refs/heads/', '');
-            status += ', branch ' + branchName + ' was removed';
-            console.log('Found relevant event: Removal of branch ' + branchName);
-            removeAllPackagesByBranch(message.repository.name, branchName, function(result, count) {
+            status += ', branch ' + branchName + ' was removed from ' + message.repository.name;
+            console.log('Found relevant event: Removal of branch ' + branchName + ' from ' + message.repository.name);
+            removeAllPackagesByBranch(message.repository.name, branchName, function(result, count, deletedPackages) {
                 if(result === true && count > 0) {
                     status += ', all ' + count + ' package(s) were deleted.';
-                    console.log('Finished removing all ' + count + ' package(s) of branch ' + branchName + '.');
-                    conclude(status);
+                    console.log('Finished removing all ' + count + ' package(s) of branch ' + branchName + ' in ' + message.repository.name + '.');
+                    conclude(status, deletedPackages, true);
                 } else if(result === true) {
                     status += ', but no packages were found. Nothing was deleted.';
-                    console.log('Finished removing all ' + count + ' package(s) of branch ' + branchName + '.');
-                    conclude(status);
+                    console.log('Finished removing all ' + count + ' package(s) of branch ' + branchName + ' in ' + message.repository.name + '.');
+                    conclude(status, deletedPackages, true);
                 } else {
                     status += ', encountered an error while deleting all packages.';
-                    console.log('Error while removing all packages of branch ' + branchName + '.');
-                    conclude(status);
+                    console.log('Error while removing all packages of branch ' + branchName + ' in ' + message.repository.name + '.');
+                    conclude(status, deletedPackages, true);
                 }
             });
         /*
@@ -420,32 +455,32 @@ exports.handler = (event, context, callback) => {
         } else if(message.ref.startsWith('refs/tags/') && message.created === true && message.before === '0000000000000000000000000000000000000000') {
             //handle newly created tags
             var tagName = message.ref.replace('refs/tags/', '');
-            status += ', new tag ' + tagName + ' was created';
-            console.log('Found relevant event: Created new tag ' + tagName);
-            removeSnapshotPackagesByTag(message.repository.name, tagName, function(result, count) {
+            status += ', new tag ' + tagName + ' was created in ' + message.repository.name;
+            console.log('Found relevant event: Created new tag ' + tagName + ' in ' + message.repository.name);
+            removeSnapshotPackagesByTag(message.repository.name, tagName, function(result, count, deletedPackages) {
                 if(result === true && count > 0) {
                     status += ', all ' + count + ' snapshot(s) were deleted.';
-                    console.log('Finished removing ' + count + ' snapshot(s) of tag ' + tagName + '.');
-                    conclude(status);
+                    console.log('Finished removing ' + count + ' snapshot(s) of tag ' + tagName + ' in ' + message.repository.name + '.');
+                    conclude(status, deletedPackages, true);
                 } else if(result === true) {
                     status += ', but no snapshots were found. Nothing was deleted.';
-                    console.log('Finished removing ' + count + ' snapshot(s) of tag ' + tagName + '.');
-                    conclude(status);
+                    console.log('Finished removing ' + count + ' snapshot(s) of tag ' + tagName + ' in ' + message.repository.name + '.');
+                    conclude(status, deletedPackages, true);
                 } else {
                     status += ', encountered an error while deleting snapshots.';
-                    console.log('Error while removing snapshots of tag ' + tagName + '.');
-                    conclude(status);
+                    console.log('Error while removing snapshots of tag ' + tagName + ' in ' + message.repository.name + '.');
+                    conclude(status, deletedPackages, true);
                 }
             });
         } else {
             status += ', but no condition for further processing was met. Nothing was cleaned. See CloudWatch for full event.';
             console.log('Full event: ' + JSON.stringify(message));
-            conclude(status);
+            conclude(status, null, false);
         }
     } else {
         console.log('Cannot find a GitHub event.');
         status = 'Non-GitHub event found, nothing was cleaned.';
-        conclude(status);
+        conclude(status, null, false);
     }
 
     callback(null, status);
